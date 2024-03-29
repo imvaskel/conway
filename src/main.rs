@@ -338,6 +338,6 @@ impl Conway {
             self.cells[y][x] = status;
         }
 
-        return true;
+        true
     }
 }

@@ -1,16 +1,14 @@
-
 # Conway
+
+![Demo](.github/demo.gif)
 
 An implementation of [Conway's Game of Life](https://en.wikipedia.org/wiki/Conway's_Game_of_Life) in rust, for fun.
 
 It comes with some features, namely preset patterns that are cool to look at from the wikipedia page, the ability to provide cells as the basis, and the ability to seed the rng that is used for generating the initial cells.
 
-
-
-
 ## Installation
 
-Install conway with ``cargo install``
+Install conway with `cargo install`
 
 ```bash
   cargo install --git https://github.com/imvaskel/conway
@@ -35,8 +33,6 @@ Options:
   -V, --version                Print version
 ```
 
-
 ## License
 
 [MIT](https://choosealicense.com/licenses/mit/)
-
