@@ -1,7 +1,8 @@
 use core::fmt;
-use std::{process::exit, thread, time::Duration, vec};
+use std::{process::exit, sync::OnceLock, thread, time::Duration, vec};
 
 use clap::{command, error::ErrorKind, CommandFactory, Parser, ValueEnum};
+use lazy_static::lazy_static;
 use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 
 fn main() {
@@ -14,19 +15,17 @@ fn main() {
 
     let cli = Cli::parse();
 
-    if let Some((w, h)) = term_size::dimensions() {
-        if w < cli.x || h < cli.y {
-            println!("Warning: Your terminal is not big enough for the size of this board.");
-            println!(
-                "Your board is {}x{} but your terminal is only {w}x{h}",
-                cli.x, cli.y
-            );
-            let mut buffer = String::new();
-            println!("Press any button to continue: ");
-            std::io::stdin()
-                .read_line(&mut buffer)
-                .expect("Unable to get stdin.");
-        }
+    if SIZE.0 < cli.width || SIZE.1 < cli.height {
+        println!("Warning: Your terminal is not big enough for the size of this board.");
+        println!(
+            "Your board is {}x{} but your terminal is only {}x{}",
+            cli.width, cli.height, SIZE.0, SIZE.1
+        );
+        let mut buffer = String::new();
+        println!("Press any button to continue: ");
+        std::io::stdin()
+            .read_line(&mut buffer)
+            .expect("Unable to get stdin.");
     }
 
     let rng = if cli.seed.is_some() {
@@ -44,7 +43,7 @@ fn main() {
             conway.revive_cell(coord_x, coord_y);
         }
     } else {
-        conway = Conway::new(cli.x, cli.y, rng);
+        conway = Conway::new(cli.width, cli.height, rng);
 
         if let Some(cells) = cli.cells {
             println!(
@@ -70,14 +69,19 @@ fn clear() {
     println!("\x1b[J");
 }
 
+lazy_static! {
+    static ref SIZE: (usize, usize) =
+        term_size::dimensions().expect("Unable to parse terminal size.");
+}
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 struct Cli {
-    /// The x size of the conway game.
-    x: usize,
+    /// The width of the Conway board.
+    width: usize,
 
-    /// The y size of the conway game.
-    y: usize,
+    /// The height of the Conway board.
+    height: usize,
 
     #[arg(short, long, conflicts_with_all = ["pattern", "num_cells", "seed"], value_parser = parse_coordinate_pair, num_args=0..)]
     /// A space seperated set of coordinate pairs in the form x,y
@@ -205,7 +209,10 @@ impl Conway {
             Cli::command()
                 .error(
                     ErrorKind::InvalidValue,
-                    format!("The coordinate pair {x},{y} was out of bounds."),
+                    format!(
+                        "The coordinate pair {x},{y} was out of bounds for size {}x{}.",
+                        self.width, self.height
+                    ),
                 )
                 .exit();
         };
@@ -239,7 +246,17 @@ impl Conway {
     }
 
     fn print(&self) {
+        static OFFSET: OnceLock<usize> = OnceLock::new();
+        let offset = OFFSET.get_or_init(|| {
+            if self.width >= SIZE.0 {
+                0
+            } else {
+                (SIZE.0/2)-(self.width/2)
+            }
+
+        });
         for row in self.cells.chunks(self.width) {
+            print!("{}", " ".repeat(*offset));
             for cell in row {
                 match cell {
                     CellState::Alive => print!("{COLOR_GREEN}#"),
@@ -321,7 +338,9 @@ impl Conway {
         for y in 0..self.height {
             for x in 0..self.width {
                 let neighbors = self.neighbors(x, y);
-                let cell = self.get_cell(x, y).expect("Somehow the index for the cells were off.");
+                let cell = self
+                    .get_cell(x, y)
+                    .expect("Somehow the index for the cells were off.");
                 match cell {
                     CellState::Alive => {
                         // if an alive cell has anything but 2 or 3 neighbors, it dies.
