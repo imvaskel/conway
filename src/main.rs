@@ -168,8 +168,10 @@ enum CellState {
 
 /// Representation of a Conway's game of life board.
 struct Conway {
-    cells: Vec<Vec<CellState>>,
+    cells: Vec<CellState>,
     rng: StdRng,
+    width: usize,
+    height: usize,
 }
 
 /// Represents coordinates of neighbors in the form of offset of x, y
@@ -189,27 +191,21 @@ const COLOR_GREEN: &'static str = "\x1b[31;32m";
 
 impl Conway {
     /// Returns a Conway's board with the size of x, y
-    fn new(x: usize, y: usize, rng: StdRng) -> Self {
+    fn new(width: usize, height: usize, rng: StdRng) -> Self {
         return Self {
-            cells: vec![vec![CellState::Dead; x]; y],
+            cells: vec![CellState::Dead; width * height],
             rng: rng,
+            width,
+            height,
         };
     }
 
     fn revive_cell(&mut self, x: usize, y: usize) {
-        let Some(row) = self.cells.get(y) else {
+        let Some(cell) = self.cells.get(x + y * self.width) else {
             Cli::command()
                 .error(
                     ErrorKind::InvalidValue,
-                    format!("Y coordinate {} was out of bounds.", y),
-                )
-                .exit();
-        };
-        let Some(cell) = row.get(x) else {
-            Cli::command()
-                .error(
-                    ErrorKind::InvalidValue,
-                    format!("X coordinate {} was out of bounds", y),
+                    format!("The coordinate pair {x},{y} was out of bounds."),
                 )
                 .exit();
         };
@@ -219,7 +215,10 @@ impl Conway {
                 x, y
             );
         } else {
-            self.cells[y][x] = CellState::Alive;
+            if let Err(s) = self.set_cell(x, y, CellState::Alive) {
+                eprintln!("{}", s);
+                exit(1);
+            }
         }
     }
 
@@ -240,8 +239,8 @@ impl Conway {
     }
 
     fn print(&self) {
-        for row in self.cells.iter() {
-            for &cell in row.iter() {
+        for row in self.cells.chunks(self.width) {
+            for cell in row {
                 match cell {
                     CellState::Alive => print!("{COLOR_GREEN}#"),
                     CellState::Dead => print!(" "),
@@ -253,21 +252,20 @@ impl Conway {
 
     /// Randomly generates a board with a given amount of cells.
     fn generate_board(&mut self, cells: usize) {
-        let x_size = self.cells.len();
-
         for _ in 0..cells {
             loop {
-                let x = self.rng.gen_range(0..x_size);
-                let y = self.rng.gen_range(0..self.cells[x].len());
-                if let Some(row) = self.cells.get(y) {
-                    if let Some(cell) = row.get(x) {
-                        // if the cell is not already alive, then make it so
-                        match cell {
-                            CellState::Alive => continue,
-                            CellState::Dead => {
-                                self.cells[y][x] = CellState::Alive;
-                                break;
+                let x = self.rng.gen_range(0..self.width);
+                let y = self.rng.gen_range(0..self.height);
+                if let Some(cell) = self.get_cell(x, y) {
+                    // if the cell is not already alive, then make it so
+                    match cell {
+                        CellState::Alive => continue,
+                        CellState::Dead => {
+                            if let Err(s) = self.set_cell(x, y, CellState::Alive) {
+                                eprintln!("{}", s);
+                                exit(1);
                             }
+                            break;
                         }
                     }
                 }
@@ -277,12 +275,9 @@ impl Conway {
 
     /// Returns the amount of neighbors that a cell has that are currently alive.
     fn neighbors(&self, x: usize, y: usize) -> usize {
-        let Some(row) = self.cells.get(y) else {
+        if self.get_cell(x, y).is_none() {
             return 0;
-        };
-        let Some(_) = row.get(x) else {
-            return 0;
-        };
+        }
         let mut neighbors: usize = 0;
         for (offset_x, offset_y) in NEIGHBOR_COORDINATES.iter() {
             // Calculate the offest, and if it is invalid (i.e) -1, then skip it
@@ -291,12 +286,11 @@ impl Conway {
             if neighbor_x < 0i32 || neighbor_y < 0i32 {
                 continue;
             }
-            if let Some(offset_row) = self.cells.get(neighbor_y as usize) {
-                if let Some(neighbor) = offset_row.get(neighbor_x as usize) {
-                    neighbors += match neighbor {
-                        CellState::Alive => 1,
-                        CellState::Dead => 0,
-                    }
+
+            if let Some(neighbor) = self.get_cell(neighbor_x as usize, neighbor_y as usize) {
+                neighbors += match neighbor {
+                    CellState::Alive => 1,
+                    CellState::Dead => 0,
                 }
             }
         }
@@ -304,15 +298,30 @@ impl Conway {
         neighbors
     }
 
+    fn get_cell(&self, x: usize, y: usize) -> Option<CellState> {
+        self.cells.get(x + y * self.width).copied()
+    }
+
+    fn set_cell(&mut self, x: usize, y: usize, state: CellState) -> Result<(), String> {
+        if x + y * self.width > self.cells.len() {
+            return Err(format!(
+                "Coordinate pair {x},{y} was out of bounds for board size {}x{}",
+                self.width, self.height
+            ));
+        }
+        self.cells[x + y * self.width] = state;
+
+        Ok(())
+    }
+
     /// Ticks the game board, checking if the next set of cells is alive.
     /// This will return ``true`` if the game managed to tick, else it will return ``false``.
     fn tick(&mut self) -> bool {
         let mut changed: Vec<(usize, usize, CellState)> = vec![];
-        for y in 0..self.cells.len() {
-            let row = &self.cells[y];
-            for x in 0..row.len() {
+        for y in 0..self.height {
+            for x in 0..self.width {
                 let neighbors = self.neighbors(x, y);
-                let cell = self.cells[y][x];
+                let cell = self.get_cell(x, y).expect("Somehow the index for the cells were off.");
                 match cell {
                     CellState::Alive => {
                         // if an alive cell has anything but 2 or 3 neighbors, it dies.
@@ -334,8 +343,11 @@ impl Conway {
             return false;
         }
 
-        for (x, y, status) in changed {
-            self.cells[y][x] = status;
+        for (x, y, state) in changed {
+            if let Err(s) = self.set_cell(x, y, state) {
+                eprintln!("{}", s);
+                exit(1);
+            }
         }
 
         true
