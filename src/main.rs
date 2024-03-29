@@ -79,7 +79,7 @@ struct Cli {
     /// The y size of the conway game.
     y: usize,
 
-    #[arg(short, long, conflicts_with_all = ["pattern", "num_cells"], value_parser = parse_coordinate_pair, num_args=0..)]
+    #[arg(short, long, conflicts_with_all = ["pattern", "num_cells", "seed"], value_parser = parse_coordinate_pair, num_args=0..)]
     /// A space seperated set of coordinate pairs in the form x,y
     cells: Option<Vec<(usize, usize)>>,
 
@@ -87,7 +87,7 @@ struct Cli {
     /// The number of cells to generate
     num_cells: Option<usize>,
 
-    #[arg(short, long, conflicts_with_all = ["cells", "num_cells"])]
+    #[arg(short, long, conflicts_with_all = ["cells", "num_cells", "seed"])]
     /// The pattern to use. Note: due to the way clap parses args, you still need to provide x and y, though they will be ignored.
     pattern: Option<Pattern>,
 
@@ -226,8 +226,7 @@ impl Conway {
     fn game_loop(&mut self) {
         // This is a nonstandard ansi code to make the cursor invisible.
         print!("\x1b[?25l");
-        while !self.is_over() {
-            self.tick();
+        while self.tick() {
             clear();
             self.print();
             // Move the cursor to the home position (0,0)
@@ -235,6 +234,8 @@ impl Conway {
             println!();
             thread::sleep(Duration::from_millis(500));
         }
+        // print the last board before it stopped ticking.
+        self.print();
         println!("\x1b[?25h");
     }
 
@@ -274,9 +275,7 @@ impl Conway {
         }
     }
 
-    /// Checks if a cell is alive, based on the amount of neighbors.
-    /// If 2 or 3 neighbors, it is alive, else it is dead.
-    /// This also counts a previously dead cell as alive whenever it has 2 <= n <= 3 neighbors
+    /// Returns the amount of neighbors that a cell has that are currently alive.
     fn neighbors(&self, x: usize, y: usize) -> usize {
         let Some(row) = self.cells.get(y) else {
             return 0;
@@ -306,7 +305,8 @@ impl Conway {
     }
 
     /// Ticks the game board, checking if the next set of cells is alive.
-    fn tick(&mut self) {
+    /// This will return ``true`` if the game managed to tick, else it will return ``false``.
+    fn tick(&mut self) -> bool {
         let mut changed: Vec<(usize, usize, CellState)> = vec![];
         for y in 0..self.cells.len() {
             let row = &self.cells[y];
@@ -330,22 +330,14 @@ impl Conway {
             }
         }
 
+        if changed.is_empty() {
+            return false;
+        }
+
         for (x, y, status) in changed {
             self.cells[y][x] = status;
         }
-    }
 
-    /// Checks if the game is over. This basically just checks if there are 0 alive cells.
-    fn is_over(&self) -> bool {
-        for row in self.cells.iter() {
-            for cell in row.iter() {
-                match cell {
-                    CellState::Alive => return false,
-                    _ => (),
-                }
-            }
-        }
-
-        true
+        return true;
     }
 }
