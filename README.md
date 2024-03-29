@@ -13,7 +13,7 @@ It comes with some features, namely preset patterns that are cool to look at fro
 Install conway with ``cargo install``
 
 ```bash
-  cargo install https://github.com/imvaskel/conway
+  cargo install --git https://github.com/imvaskel/conway
 ```
 
 ## Usage/Examples
