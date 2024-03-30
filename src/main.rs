@@ -2,24 +2,25 @@ use core::fmt;
 use std::{process::exit, sync::OnceLock, thread, time::Duration, vec};
 
 use clap::{command, error::ErrorKind, CommandFactory, Parser, ValueEnum};
-use lazy_static::lazy_static;
 use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 
-fn main() {
+fn main() -> Result<(), String> {
     ctrlc::set_handler(move || {
         // Restore the cursor if our program is ctrl-c'd
         println!("\x1b[?25h");
         exit(0);
     })
-    .expect("Error setting ctrl-c handler");
+    .map_err(|_| "Error setting ctrl-c handler")?;
+    let (w, h) =
+        *SIZE.get_or_init(|| term_size::dimensions().expect("Unable to get terminal size"));
 
     let cli = Cli::parse();
 
-    if SIZE.0 < cli.width || SIZE.1 < cli.height {
+    if w < cli.width || h < cli.height {
         println!("Warning: Your terminal is not big enough for the size of this board.");
         println!(
             "Your board is {}x{} but your terminal is only {}x{}",
-            cli.width, cli.height, SIZE.0, SIZE.1
+            cli.width, cli.height, w, h
         );
         let mut buffer = String::new();
         println!("Press any button to continue: ");
@@ -40,7 +41,7 @@ fn main() {
         let (x, y) = pattern.size();
         conway = Conway::new(x, y, rng);
         for (coord_x, coord_y) in pattern.coordinates() {
-            conway.revive_cell(coord_x, coord_y);
+            conway.revive_cell(coord_x, coord_y)?;
         }
     } else {
         conway = Conway::new(cli.width, cli.height, rng);
@@ -52,27 +53,25 @@ fn main() {
             );
             for cell in cells {
                 let (x, y) = cell;
-                conway.revive_cell(x - 1, y - 1);
+                conway.revive_cell(x - 1, y - 1)?;
             }
         } else {
             match cli.num_cells {
-                Some(n) => conway.generate_board(n),
+                Some(n) => conway.generate_board(n)?,
                 None => Cli::command().error(ErrorKind::Io, "No coordinate pairs were specified, but neither was the amount of random cells.").exit()
             }
         }
     }
 
-    conway.game_loop();
+    conway.game_loop()?;
+    Ok(())
 }
 
 fn clear() {
     println!("\x1b[J");
 }
 
-lazy_static! {
-    static ref SIZE: (usize, usize) =
-        term_size::dimensions().expect("Unable to parse terminal size.");
-}
+static SIZE: OnceLock<(usize, usize)> = OnceLock::new();
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -204,35 +203,32 @@ impl Conway {
         };
     }
 
-    fn revive_cell(&mut self, x: usize, y: usize) {
+    fn revive_cell(&mut self, x: usize, y: usize) -> Result<(), String> {
         let Some(cell) = self.cells.get(x + y * self.width) else {
-            Cli::command()
-                .error(
-                    ErrorKind::InvalidValue,
-                    format!(
-                        "The coordinate pair {x},{y} was out of bounds for size {}x{}.",
-                        self.width, self.height
-                    ),
-                )
-                .exit();
+            return Err(format!(
+                "The coordinate pair {},{} was out of bounds for size {}x{}.",
+                x + 1,
+                y + 1,
+                self.width,
+                self.height
+            ));
         };
         if matches!(cell, CellState::Alive) {
             println!(
                 "The cell with coordinates {}, {} was already alive, skipping...",
-                x, y
+                x + 1,
+                y + 1
             );
+            Ok(())
         } else {
-            if let Err(s) = self.set_cell(x, y, CellState::Alive) {
-                eprintln!("{}", s);
-                exit(1);
-            }
+            self.set_cell(x, y, CellState::Alive)
         }
     }
 
-    fn game_loop(&mut self) {
+    fn game_loop(&mut self) -> Result<(), String> {
         // This is a nonstandard ansi code to make the cursor invisible.
         print!("\x1b[?25l");
-        while self.tick() {
+        while self.tick()? {
             clear();
             self.print();
             // Move the cursor to the home position (0,0)
@@ -243,17 +239,19 @@ impl Conway {
         // print the last board before it stopped ticking.
         self.print();
         println!("\x1b[?25h");
+
+        Ok(())
     }
 
     fn print(&self) {
         static OFFSET: OnceLock<usize> = OnceLock::new();
+        let (w, _) = *SIZE.get().expect("Somehow the terminal size wasn't set.");
         let offset = OFFSET.get_or_init(|| {
-            if self.width >= SIZE.0 {
+            if self.width >= w {
                 0
             } else {
-                (SIZE.0/2)-(self.width/2)
+                (w / 2) - (self.width / 2)
             }
-
         });
         for row in self.cells.chunks(self.width) {
             print!("{}", " ".repeat(*offset));
@@ -268,7 +266,7 @@ impl Conway {
     }
 
     /// Randomly generates a board with a given amount of cells.
-    fn generate_board(&mut self, cells: usize) {
+    fn generate_board(&mut self, cells: usize) -> Result<(), String> {
         for _ in 0..cells {
             loop {
                 let x = self.rng.gen_range(0..self.width);
@@ -277,23 +275,18 @@ impl Conway {
                     // if the cell is not already alive, then make it so
                     match cell {
                         CellState::Alive => continue,
-                        CellState::Dead => {
-                            if let Err(s) = self.set_cell(x, y, CellState::Alive) {
-                                eprintln!("{}", s);
-                                exit(1);
-                            }
-                            break;
-                        }
+                        CellState::Dead => self.set_cell(x, y, CellState::Alive)?,
                     }
                 }
             }
         }
+        Ok(())
     }
 
     /// Returns the amount of neighbors that a cell has that are currently alive.
-    fn neighbors(&self, x: usize, y: usize) -> usize {
+    fn neighbors(&self, x: usize, y: usize) -> Result<usize, String> {
         if self.get_cell(x, y).is_none() {
-            return 0;
+            Err(format!("Coordinate pair {x},{y} was invalid."))?
         }
         let mut neighbors: usize = 0;
         for (offset_x, offset_y) in NEIGHBOR_COORDINATES.iter() {
@@ -312,7 +305,7 @@ impl Conway {
             }
         }
 
-        neighbors
+        Ok(neighbors)
     }
 
     fn get_cell(&self, x: usize, y: usize) -> Option<CellState> {
@@ -333,14 +326,14 @@ impl Conway {
 
     /// Ticks the game board, checking if the next set of cells is alive.
     /// This will return ``true`` if the game managed to tick, else it will return ``false``.
-    fn tick(&mut self) -> bool {
+    fn tick(&mut self) -> Result<bool, String> {
         let mut changed: Vec<(usize, usize, CellState)> = vec![];
         for y in 0..self.height {
             for x in 0..self.width {
-                let neighbors = self.neighbors(x, y);
+                let neighbors = self.neighbors(x, y)?;
                 let cell = self
                     .get_cell(x, y)
-                    .expect("Somehow the index for the cells were off.");
+                    .ok_or("Somehow the index for the cells were off.")?;
                 match cell {
                     CellState::Alive => {
                         // if an alive cell has anything but 2 or 3 neighbors, it dies.
@@ -359,16 +352,13 @@ impl Conway {
         }
 
         if changed.is_empty() {
-            return false;
+            return Ok(false);
         }
 
         for (x, y, state) in changed {
-            if let Err(s) = self.set_cell(x, y, state) {
-                eprintln!("{}", s);
-                exit(1);
-            }
+            self.set_cell(x, y, state)?
         }
 
-        true
+        Ok(true)
     }
 }

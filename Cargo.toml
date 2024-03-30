@@ -9,7 +9,6 @@ repository = "https://github.com/imvaskel/conway"
 [dependencies]
 clap = { version = "4.5.4", features = ["derive"] }
 ctrlc = "3.4.4"
-lazy_static = "1.4.0"
 rand = "0.8.5"
 term_size = "0.3.2"
 
