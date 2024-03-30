@@ -21,7 +21,5 @@ repos:
         - rust
       args:
         - "--"
-        - "-W"
-        - "clippy::pedantic"
         - "-D"
         - "warnings"

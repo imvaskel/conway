@@ -1,3 +1,10 @@
+#![warn(clippy::pedantic)]
+#![allow(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss
+)]
+
 use core::fmt;
 use std::{process::exit, sync::OnceLock, thread, time::Duration, vec};
 
@@ -37,7 +44,7 @@ fn main() -> Result<(), String> {
 
     let mut conway;
     if let Some(pattern) = cli.pattern {
-        println!("Found a pattern argument, using it. ({})", pattern);
+        println!("Found a pattern argument, using it. ({pattern})");
         let (x, y) = pattern.size();
         conway = Conway::new(x, y, rng);
         for (coord_x, coord_y) in pattern.coordinates() {
@@ -100,7 +107,7 @@ struct Cli {
 }
 
 /// Contains vectors of coordinate setups that make cool patterns.
-/// https://en.wikipedia.org/wiki/Conway's_Game_of_Life
+/// <https://en.wikipedia.org/wiki/Conway's_Game_of_Life>
 /// Call ``coordinates`` to get the coordinate sets.
 /// Call ``size`` to get the preferred size for these patterns.
 #[derive(Clone, Copy, ValueEnum)]
@@ -125,12 +132,12 @@ impl fmt::Display for Pattern {
             Self::Beacon => "Beacon",
             Self::Tub => "Tub",
         };
-        write!(f, "{}", pattern)
+        write!(f, "{pattern}")
     }
 }
 
 impl Pattern {
-    fn coordinates(&self) -> Vec<(usize, usize)> {
+    fn coordinates(self) -> Vec<(usize, usize)> {
         match self {
             Self::Block => vec![(2, 2), (3, 2), (2, 3), (3, 3)],
             Self::Blinker => vec![(2, 3), (3, 3), (4, 3)],
@@ -142,7 +149,7 @@ impl Pattern {
         }
     }
 
-    fn size(&self) -> (usize, usize) {
+    fn size(self) -> (usize, usize) {
         match self {
             Self::Block => (4, 4),
             Self::Blinker | Self::Tub => (5, 5),
@@ -289,10 +296,10 @@ impl Conway {
     /// Returns the amount of neighbors that a cell has that are currently alive.
     fn neighbors(&self, x: usize, y: usize) -> Result<usize, String> {
         if self.get_cell(x, y).is_none() {
-            Err(format!("Coordinate pair {x},{y} was invalid."))?
+            Err(format!("Coordinate pair {x},{y} was invalid."))?;
         }
         let mut neighbors: usize = 0;
-        for (offset_x, offset_y) in NEIGHBOR_COORDINATES.iter() {
+        for (offset_x, offset_y) in &NEIGHBOR_COORDINATES {
             // Calculate the offest, and if it is invalid (i.e) -1, then skip it
             let neighbor_x = (x as i32) + offset_x;
             let neighbor_y = (y as i32) + offset_y;
@@ -343,11 +350,11 @@ impl Conway {
                         if !(2..=3).contains(&neighbors) {
                             changed.push((x, y, CellState::Dead));
                         }
-                    }
+                    },
                     CellState::Dead => {
                         // if a dead cell has 3 neighbors, it becomes alive again.
                         if neighbors == 3 {
-                            changed.push((x, y, CellState::Alive))
+                            changed.push((x, y, CellState::Alive));
                         }
                     }
                 }
@@ -359,7 +366,7 @@ impl Conway {
         }
 
         for (x, y, state) in changed {
-            self.set_cell(x, y, state)?
+            self.set_cell(x, y, state)?;
         }
 
         Ok(true)
