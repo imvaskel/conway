@@ -1,10 +1,10 @@
 repos:
   - repo: local
     hooks:
-    - id: cargo-check
-      name: cargo check
-      description: Run cargo check
-      entry: cargo check
+    - id: cargo-fmt
+      name: cargo fmt
+      description: Run cargo fmt
+      entry: cargo fmt
       language: system
       pass_filenames: false
       types:

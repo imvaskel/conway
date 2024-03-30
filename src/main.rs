@@ -350,7 +350,7 @@ impl Conway {
                         if !(2..=3).contains(&neighbors) {
                             changed.push((x, y, CellState::Dead));
                         }
-                    },
+                    }
                     CellState::Dead => {
                         // if a dead cell has 3 neighbors, it becomes alive again.
                         if neighbors == 3 {
