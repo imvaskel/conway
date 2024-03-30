@@ -16,6 +16,7 @@ repos:
       description: Run cargo check
       entry: cargo check
       language: system
+      pass_filenames: false
       types:
         - rust
       args:

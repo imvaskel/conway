@@ -153,12 +153,12 @@ impl Pattern {
 }
 
 fn parse_coordinate_pair(s: &str) -> Result<(usize, usize), String> {
-    match s.split(",").collect::<Vec<&str>>()[..] {
+    match s.split(',').collect::<Vec<&str>>()[..] {
         [x, y] => match (x.parse::<usize>(), y.parse::<usize>()) {
-            (Ok(x), Ok(y)) => return Ok((x, y)),
-            _ => return Err("Unable to parse coordinate pair.".to_owned()),
+            (Ok(x), Ok(y)) => Ok((x, y)),
+            _ => Err("Unable to parse coordinate pair.".to_owned()),
         },
-        _ => return Err("Encountered invalid coordinate set when parsing coordinates".to_owned()),
+        _ => Err("Encountered invalid coordinate set when parsing coordinates".to_owned()),
     }
 }
 
@@ -189,18 +189,18 @@ const NEIGHBOR_COORDINATES: [(i32, i32); 8] = [
     (1, 1),   // Bottom Right
 ];
 
-const RESET: &'static str = "\x1B[0m";
-const COLOR_GREEN: &'static str = "\x1b[31;32m";
+const RESET: &str = "\x1B[0m";
+const COLOR_GREEN: &str = "\x1b[31;32m";
 
 impl Conway {
     /// Returns a Conway's board with the size of x, y
     fn new(width: usize, height: usize, rng: StdRng) -> Self {
-        return Self {
+        Self {
             cells: vec![CellState::Dead; width * height],
-            rng: rng,
+            rng,
             width,
             height,
-        };
+        }
     }
 
     fn revive_cell(&mut self, x: usize, y: usize) -> Result<(), String> {
@@ -274,8 +274,11 @@ impl Conway {
                 if let Some(cell) = self.get_cell(x, y) {
                     // if the cell is not already alive, then make it so
                     match cell {
-                        CellState::Alive => continue,
-                        CellState::Dead => self.set_cell(x, y, CellState::Alive)?,
+                        CellState::Alive => (),
+                        CellState::Dead => {
+                            self.set_cell(x, y, CellState::Alive)?;
+                            break;
+                        }
                     }
                 }
             }
@@ -337,7 +340,7 @@ impl Conway {
                 match cell {
                     CellState::Alive => {
                         // if an alive cell has anything but 2 or 3 neighbors, it dies.
-                        if neighbors < 2 || neighbors > 3 {
+                        if !(2..=3).contains(&neighbors) {
                             changed.push((x, y, CellState::Dead));
                         }
                     }
