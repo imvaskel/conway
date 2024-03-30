@@ -10,10 +10,23 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  lint:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v3
-      - name: Build
-        run: cargo build --verbose
+        name: Checkout Repository
+        with:
+          fetch-depth: 0
+
+      - name: "Run cargo fmt"
+        id: cargo-fmt
+        run: |
+          cargo fmt --check
+
+      - name: "Run cargo clippy"
+        id: cargo-clippy
+        run: |
+          cargo clippy -- -W clippy::pedantic -D warnings
+
+
