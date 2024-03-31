@@ -6,29 +6,41 @@
 )]
 
 use core::fmt;
-use std::{process::exit, sync::OnceLock, thread, time::Duration, vec};
+use std::{io, process::exit, sync::OnceLock, thread, time::Duration, vec};
 
-use clap::{command, error::ErrorKind, CommandFactory, Parser, ValueEnum};
+use clap::{command, Parser, ValueEnum};
+use crossterm::{
+    cursor, execute,
+    style::{self, Stylize},
+    terminal,
+};
 use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 
-fn main() -> Result<(), String> {
-    ctrlc::set_handler(move || {
-        // Restore the cursor if our program is ctrl-c'd
-        println!("\x1b[?25h");
-        exit(0);
-    })
-    .map_err(|_| "Error setting ctrl-c handler")?;
-    let (w, h) =
-        *SIZE.get_or_init(|| term_size::dimensions().expect("Unable to get terminal size"));
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let (w, h) = *SIZE.get_or_init(|| {
+        let size = crossterm::terminal::size().expect("Unable to get terminal size.");
+        (size.0 as usize, size.1 as usize)
+    });
 
+    // Parse the cli before touching the terminal as we can't reset what we've done.
     let cli = Cli::parse();
+    let width = cli.width.unwrap_or(w);
+    let height = cli.height.unwrap_or(h);
 
-    if w < cli.width || h < cli.height {
+    execute!(io::stdout(), terminal::EnterAlternateScreen)
+        .map_err(|_| "Unable to enter alternative screen.")?;
+    ctrlc::set_handler(|| {
+        execute!(io::stdout(), terminal::LeaveAlternateScreen)
+            .expect("Unable to leave alternate screen.");
+        execute!(io::stdout(), cursor::Show).expect("Unable to show cursor.");
+        exit(0)
+    })
+    .map_err(|_| "Unable to register ctrl-c handler.")?;
+    execute!(io::stdout(), cursor::Hide).map_err(|_| "Unable to hide cursor.")?;
+
+    if w < width || h < height {
         println!("Warning: Your terminal is not big enough for the size of this board.");
-        println!(
-            "Your board is {}x{} but your terminal is only {}x{}",
-            cli.width, cli.height, w, h
-        );
+        println!("Your board is {width}x{height} but your terminal is only {w}x{h}");
         let mut buffer = String::new();
         println!("Press any button to continue: ");
         std::io::stdin()
@@ -51,7 +63,7 @@ fn main() -> Result<(), String> {
             conway.revive_cell(coord_x, coord_y)?;
         }
     } else {
-        conway = Conway::new(cli.width, cli.height, rng);
+        conway = Conway::new(width, height, rng);
 
         if let Some(cells) = cli.cells {
             println!(
@@ -65,17 +77,17 @@ fn main() -> Result<(), String> {
         } else {
             match cli.num_cells {
                 Some(n) => conway.generate_board(n)?,
-                None => Cli::command().error(ErrorKind::Io, "No coordinate pairs were specified, but neither was the amount of random cells.").exit()
+                None => conway.generate_random_board(),
             }
         }
     }
 
     conway.game_loop()?;
-    Ok(())
-}
+    execute!(io::stdout(), terminal::LeaveAlternateScreen)
+        .map_err(|_| "Unable to exit alternative screen.")?;
+    execute!(io::stdout(), cursor::Show).map_err(|_| "Unable to show cursor again.")?;
 
-fn clear() {
-    println!("\x1b[J");
+    Ok(())
 }
 
 static SIZE: OnceLock<(usize, usize)> = OnceLock::new();
@@ -84,21 +96,21 @@ static SIZE: OnceLock<(usize, usize)> = OnceLock::new();
 #[command(version, about, long_about = None)]
 struct Cli {
     /// The width of the Conway board.
-    width: usize,
+    width: Option<usize>,
 
     /// The height of the Conway board.
-    height: usize,
+    height: Option<usize>,
 
     #[arg(short, long, conflicts_with_all = ["pattern", "num_cells", "seed"], value_parser = parse_coordinate_pair, num_args=0..)]
     /// A space seperated set of coordinate pairs in the form x,y
     cells: Option<Vec<(usize, usize)>>,
 
     #[arg(short, long, conflicts_with_all=["pattern", "cells"])]
-    /// The number of cells to generate
+    /// The number of cells to generate. If not provided, the default is a 50% chance per cell.
     num_cells: Option<usize>,
 
     #[arg(short, long, conflicts_with_all = ["cells", "num_cells", "seed"])]
-    /// The pattern to use. Note: due to the way clap parses args, you still need to provide x and y, though they will be ignored.
+    /// The pattern to use.
     pattern: Option<Pattern>,
 
     #[arg(short, long, conflicts_with_all = ["cells", "pattern"])]
@@ -169,6 +181,12 @@ fn parse_coordinate_pair(s: &str) -> Result<(usize, usize), String> {
     }
 }
 
+fn clear_screen() -> Result<(), String> {
+    execute!(io::stdout(), terminal::Clear(terminal::ClearType::All))
+        .map_err(|_| "Unable to clear screen.")?;
+    Ok(())
+}
+
 /// Represents the current state of a cell, either alive or dead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CellState {
@@ -197,7 +215,6 @@ const NEIGHBOR_COORDINATES: [(i32, i32); 8] = [
 ];
 
 const RESET: &str = "\x1B[0m";
-const COLOR_GREEN: &str = "\x1b[31;32m";
 
 impl Conway {
     /// Returns a Conway's board with the size of x, y
@@ -233,24 +250,24 @@ impl Conway {
     }
 
     fn game_loop(&mut self) -> Result<(), String> {
-        // This is a nonstandard ansi code to make the cursor invisible.
-        print!("\x1b[?25l");
         while self.tick()? {
-            clear();
-            self.print();
-            // Move the cursor to the home position (0,0)
-            print!("\x1b[H");
+            clear_screen()?;
+            self.print()?;
             println!();
             thread::sleep(Duration::from_millis(500));
         }
         // print the last board before it stopped ticking.
-        self.print();
-        println!("\x1b[?25h");
+        self.print()?;
+        println!("Press any button to exit.");
+        let mut buffer = String::new();
+        io::stdin()
+            .read_line(&mut buffer)
+            .map_err(|_| "Unable to read stdin.")?;
 
         Ok(())
     }
 
-    fn print(&self) {
+    fn print(&self) -> Result<(), String> {
         static OFFSET: OnceLock<usize> = OnceLock::new();
         let (w, _) = *SIZE.get().expect("Somehow the terminal size wasn't set.");
         let offset = OFFSET.get_or_init(|| {
@@ -264,12 +281,16 @@ impl Conway {
             print!("{}", " ".repeat(*offset));
             for cell in row {
                 match cell {
-                    CellState::Alive => print!("{COLOR_GREEN}#"),
+                    CellState::Alive => {
+                        execute!(io::stdout(), style::PrintStyledContent("█".green()))
+                            .map_err(|_| "Unable to write to stdout.")?;
+                    }
                     CellState::Dead => print!(" "),
                 }
             }
             println!("{RESET}");
         }
+        Ok(())
     }
 
     /// Randomly generates a board with a given amount of cells.
@@ -291,6 +312,14 @@ impl Conway {
             }
         }
         Ok(())
+    }
+
+    fn generate_random_board(&mut self) {
+        for i in 0..self.cells.len() {
+            if self.rng.gen_range(0..=1) == 0 {
+                self.cells[i] = CellState::Alive;
+            }
+        }
     }
 
     /// Returns the amount of neighbors that a cell has that are currently alive.

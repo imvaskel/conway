@@ -1,6 +1,6 @@
 [package]
 name = "conway"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 repository = "https://github.com/imvaskel/conway"
 
@@ -8,9 +8,9 @@ repository = "https://github.com/imvaskel/conway"
 
 [dependencies]
 clap = { version = "4.5.4", features = ["derive"] }
+crossterm = "0.27.0"
 ctrlc = "3.4.4"
 rand = "0.8.5"
-term_size = "0.3.2"
 
 # The profile that 'cargo dist' will build with
 [profile.dist]
