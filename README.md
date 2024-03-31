@@ -18,16 +18,16 @@ Install conway with `cargo install`
 
 ```bash
 > conway --help
-Usage: conway [OPTIONS] <X> <Y>
+Usage: conway [OPTIONS] [WIDTH] [HEIGHT]
 
 Arguments:
-  <X>  The x size of the conway game
-  <Y>  The y size of the conway game
+  [WIDTH]   The width of the Conway board
+  [HEIGHT]  The height of the Conway board
 
 Options:
   -c, --cells [<CELLS>...]     A space seperated set of coordinate pairs in the form x,y
-  -n, --num-cells <NUM_CELLS>  The number of cells to generate
-  -p, --pattern <PATTERN>      The pattern to use. Note: due to the way clap parses args, you still need to provide x and y, though they will be ignored [possible values: block, blinker, beehive, toad, loaf, beacon, tub]
+  -n, --num-cells <NUM_CELLS>  The number of cells to generate. If not provided, the default is a 50% chance per cell
+  -p, --pattern <PATTERN>      The pattern to use [possible values: block, blinker, beehive, toad, loaf, beacon, tub]
   -s, --seed <SEED>            The seed to use for generation of the initial random cells. This can only be used with num_cells
   -h, --help                   Print help
   -V, --version                Print version
